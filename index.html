@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Smart Fitting Room — Separate Copy</title>
+<style>
+:root{--ink:#111;--muted:#666;--accent:#111;--soft:#f3f3f3;--line:#dedede}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+header{padding:24px 5vw;background:white;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:16px}
+.brand{font-weight:750;letter-spacing:.02em}.tag{color:var(--muted);font-size:13px}
+main{max-width:1040px;margin:32px auto;padding:0 20px}.viewnav{display:flex;gap:8px}.viewnav button.active{background:#111;color:#fff}
+h1{font-size:clamp(25px,4vw,38px);line-height:1.15;margin:0 0 10px}
+.intro{color:var(--muted);max-width:650px;margin-bottom:24px}
+.layout{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:20px}
+.panel{background:white;border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:0 8px 30px #00000008}
+.panel h2{font-size:18px;margin:0 0 14px}
+#reader{width:100%;overflow:hidden;border-radius:14px;background:#f5f5f5;min-height:220px}
+#reader video{border-radius:12px}
+.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+button{border:0;border-radius:12px;padding:11px 15px;font:inherit;font-weight:650;cursor:pointer}
+.primary{background:var(--accent);color:white}.secondary{background:var(--soft);color:var(--accent)}button:disabled{opacity:.45;cursor:not-allowed}
+.status{font-size:13px;color:var(--muted);margin-top:10px;min-height:20px}
+.product{display:flex;gap:16px;align-items:center;margin:12px 0 18px}
+.swatch{width:94px;height:116px;border-radius:14px;background:linear-gradient(145deg,#f7f7f7,#d9d9d9);display:grid;place-items:center;font-size:35px;flex-shrink:0}
+.product-name{font-weight:750;font-size:20px}.meta{color:var(--muted);font-size:13px}.price{font-weight:700;margin-top:7px}
+label{display:block;font-size:13px;color:var(--muted);margin:13px 0 5px}
+select{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:white;font:inherit}
+.notice{margin-top:14px;padding:12px 14px;border-radius:12px;background:#f3f3f3;color:#333;font-size:13px}
+.manual{display:flex;gap:8px;margin-top:12px}.manual input{min-width:0;flex:1;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
+@media(max-width:720px){.layout{grid-template-columns:1fr}header{padding:18px 20px}main{margin:24px auto}}
+</style>
+</head>
+<body>
+<header><div><div class="brand">SMART FITTING ROOM</div><div class="tag">Customer & staff prototype</div></div>
+<nav class="viewnav" aria-label="Choose view"><button class="secondary" id="customerTab">Customer</button><button class="secondary" id="staffTab">Staff <span id="pendingBadge"></span></button></nav></header>
+<main>
+<h1>Find your perfect fit.</h1>
+<p class="intro">Scan a clothing barcode to bring up the item, then choose a size or color to request it from the fitting-room staff.</p>
+<div class="layout">
+<section class="panel">
+<h2>1. Scan a clothing tag</h2>
+<div id="reader"></div>
+<div class="actions">
+<button class="primary" id="start">Start camera</button>
+<button class="secondary" id="stop" disabled>Stop camera</button>
+</div>
+<div class="status" id="scanStatus">Camera has not started. Allow access when your browser asks.</div>
+<div class="manual">
+<input id="barcodeInput" placeholder="Or enter barcode number" inputmode="numeric" aria-label="Barcode number">
+<button class="secondary" id="manualScan">Find item</button>
+</div>
+<div class="notice">Camera scanning requires HTTPS (GitHub Pages is fine) or localhost, and browser camera permission.</div>
+</section>
+<section class="panel">
+<h2>2. Your item</h2>
+<div id="empty">
+<p class="meta">Scan a demo barcode to see an item here.</p>
+<p class="meta">Try: <strong>885000000001</strong>, <strong>885000000002</strong>, or <strong>885000000003</strong>.</p>
+</div>
+<div id="item" hidden>
+<div class="product">
+<div class="swatch" id="swatch">👕</div>
+<div><div class="product-name" id="name"></div><div class="meta" id="details"></div><div class="price" id="price"></div></div>
+</div>
+<label for="size">Requested size</label><select id="size"><option>XS</option><option>S</option><option selected>M</option><option>L</option><option>XL</option></select>
+<label for="color">Color</label><select id="color"></select>
+<div class="actions"><button class="primary" id="request">Request this item</button><button class="secondary" id="reset">Scan another</button></div>
+<div class="status" id="requestStatus" aria-live="polite"></div>
+</div>
+</section>
+</div>
+</main>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+const inventory={
+ "885000000001":{name:"Everyday Oversized Tee",category:"Relaxed fit · Cotton",price:"฿490",emoji:"👕",colors:["White","Black","Sage"]},
+ "885000000002":{name:"Soft Knit Cardigan",category:"Lightweight · Knitwear",price:"฿890",emoji:"🧥",colors:["Cream","Navy","Dusty pink"]},
+ "885000000003":{name:"Straight-Leg Trousers",category:"High waist · Tailored",price:"฿790",emoji:"👖",colors:["Black","Beige","Charcoal"]}
+};
+let scanner=null, running=false, lastCode="";
+const $=id=>document.getElementById(id);
+function showItem(code){
+ const item=inventory[code];
+ $("scanStatus").textContent="Barcode detected: "+code;
+ if(!item){$("empty").hidden=false;$("item").hidden=true;$("empty").innerHTML='<p><strong>Barcode read:</strong> '+escapeHtml(code)+'</p><p class="meta">This barcode is not in the demo inventory. Add it to the inventory object in the page code to map it to a product.</p>';return;}
+ lastCode=code;$("empty").hidden=true;$("item").hidden=false;
+ $("name").textContent=item.name;$("details").textContent=item.category;$("price").textContent=item.price;$("swatch").textContent=item.emoji;
+ $("color").innerHTML=item.colors.map(c=>`<option>${escapeHtml(c)}</option>`).join("");
+ $("requestStatus").textContent="";
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+$("start").onclick=async()=>{
+ if(!window.Html5Qrcode){$("scanStatus").textContent="Scanner library didn't load. Check your internet connection and reload.";return;}
+ if(running)return;
+ scanner=new Html5Qrcode("reader");
+ try{
+  await scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:260,height:150},formatsToSupport:[
+   Html5QrcodeSupportedFormats.EAN_13,Html5QrcodeSupportedFormats.EAN_8,
+   Html5QrcodeSupportedFormats.UPC_A,Html5QrcodeSupportedFormats.UPC_E,
+   Html5QrcodeSupportedFormats.CODE_128,Html5QrcodeSupportedFormats.CODE_39,
+   Html5QrcodeSupportedFormats.QR_CODE
+  ]},code=>{if(code!==lastCode){showItem(code);}},()=>{});
+  running=true;$("start").disabled=true;$("stop").disabled=false;$("scanStatus").textContent="Camera is on — hold the barcode steady inside the frame.";
+ }catch(e){$("scanStatus").textContent="Could not start camera: "+(e?.message||e)+". Check camera permission and use HTTPS.";}
+};
+$("stop").onclick=async()=>{if(scanner&&running){try{await scanner.stop();await scanner.clear();}catch(e){}running=false;$("start").disabled=false;$("stop").disabled=true;$("scanStatus").textContent="Camera stopped.";}};
+$("manualScan").onclick=()=>{const code=$("barcodeInput").value.trim();if(code)showItem(code);else $("scanStatus").textContent="Enter a barcode number first.";};
+let requests=JSON.parse(localStorage.getItem("sfr_requests")||"[]");
+function persist(){localStorage.setItem("sfr_requests",JSON.stringify(requests));renderRequests();}
+function renderRequests(){
+ $("pendingBadge").textContent=requests.filter(r=>r.status==="Pending").length?`(${requests.filter(r=>r.status==="Pending").length})`:"";
+ if(!requests.length){$("requestList").innerHTML='<p class="meta">No requests yet. Submit one from Customer view.</p>';return;}
+ $("requestList").innerHTML=requests.slice().reverse().map(r=>`<article style="border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0"><div style="font-weight:700">${escapeHtml(r.item)}</div><div class="meta">Barcode: ${escapeHtml(r.barcode)} · Size ${escapeHtml(r.size)} · ${escapeHtml(r.color)}</div><div style="margin:8px 0;font-size:13px">Status: <strong>${escapeHtml(r.status)}</strong></div>${r.status==="Pending"?`<button class="primary" data-done="${r.id}">Mark delivered</button>`:"<span class=\"meta\">Completed</span>"}</article>`).join("");
+ document.querySelectorAll("[data-done]").forEach(b=>b.onclick=()=>{const r=requests.find(x=>x.id===b.dataset.done);if(r)r.status="Delivered";persist();});
+}
+$("request").onclick=()=>{
+ const req={id:Date.now().toString(),barcode:lastCode,item:$("name").textContent,size:$("size").value,color:$("color").value,status:"Pending"};
+ requests.push(req);persist();
+ $("requestStatus").textContent="Request submitted! Staff can see it in the Staff view on this device.";
+};
+$("customerTab").onclick=()=>setView("customer");$("staffTab").onclick=()=>setView("staff");
+function setView(view){
+ const staff=view==="staff";$("customerView").hidden=staff;$("staffView").hidden=!staff;
+ $("customerTab").classList.toggle("active",!staff);$("staffTab").classList.toggle("active",staff);
+ if(staff)renderRequests();
+}
+$("clearDone").onclick=()=>{requests=requests.filter(r=>r.status!=="Delivered");persist();};
+window.addEventListener("storage",()=>{requests=JSON.parse(localStorage.getItem("sfr_requests")||"[]");renderRequests();});
+setView("customer");renderRequests();
+$("reset").onclick=()=>{$("item").hidden=true;$("empty").hidden=false;$("empty").innerHTML='<p class="meta">Scan a demo barcode to see an item here.</p><p class="meta">Try: <strong>885000000001</strong>, <strong>885000000002</strong>, or <strong>885000000003</strong>.</p>';$("barcodeInput").value="";$("requestStatus").textContent="";};
+</script>
+</body>
+</html>
